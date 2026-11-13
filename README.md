@@ -1,5 +1,3 @@
-# notetaker
-an app that helps deaf students understand classes better.
 # Notetaker
 
 **Notetaker** is a smart lecture assistant that uses your laptop's microphone to capture what your professor is saying, display live captions, and automatically generate structured study notes highlighting the most important concepts in real time.

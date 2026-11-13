@@ -4,53 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Notetaker — Live Lecture Captions & Smart Notes</title>
-  <style>
-    * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
-    body { margin: 0; background: #f4f6f8; color: #1f2937; display: flex; flex-direction: column; height: 100vh; }
-    header { background: #111827; color: white; padding: 0.85rem 1.25rem; display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
-    header h1 { margin: 0; font-size: 1.2rem; display: flex; align-items: center; gap: 0.5rem; }
-    .controls { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
-    input[type="text"], input[type="password"] { padding: 0.45rem 0.65rem; border-radius: 6px; border: 1px solid #374151; background: #1f2937; color: white; font-size: 0.9rem; }
-    #lectureTitle { width: 200px; }
-    #apiKey { width: 190px; }
-    button { padding: 0.45rem 0.85rem; border: none; border-radius: 6px; font-weight: 600; font-size: 0.85rem; cursor: pointer; transition: opacity 0.15s; }
-    button:hover { opacity: 0.9; }
-    #startBtn { background: #10b981; color: white; }
-    #stopBtn { background: #ef4444; color: white; display: none; }
-    #summarizeBtn { background: #3b82f6; color: white; }
-    #saveBtn { background: #8b5cf6; color: white; }
-    #newBtn { background: #374151; color: white; }
-
-    .workspace { display: grid; grid-template-columns: 250px 1fr 1fr; gap: 1rem; padding: 1rem; flex: 1; overflow: hidden; }
-    .panel { background: white; border-radius: 10px; padding: 1rem; display: flex; flex-direction: column; box-shadow: 0 1px 3px rgba(0,0,0,0.08); overflow: hidden; }
-    .panel-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.5rem; margin-bottom: 0.75rem; }
-    .panel-header h2 { margin: 0; font-size: 1rem; }
-    .badge { font-size: 0.75rem; background: #e0f2fe; color: #0369a1; padding: 0.15rem 0.5rem; border-radius: 999px; font-weight: 600; }
-
-    .content-box { flex: 1; overflow-y: auto; line-height: 1.6; white-space: pre-wrap; font-size: 0.95rem; }
-    .interim { color: #9ca3af; font-style: italic; }
-
-    /* Sidebar list */
-    .session-list { list-style: none; padding: 0; margin: 0; overflow-y: auto; flex: 1; }
-    .session-item { padding: 0.65rem; border-radius: 6px; border: 1px solid #e5e7eb; margin-bottom: 0.5rem; cursor: pointer; display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; }
-    .session-item:hover { background: #f9fafb; }
-    .session-item.active { border-color: #3b82f6; background: #eff6ff; }
-    .session-info strong { display: block; font-size: 0.9rem; color: #111827; }
-    .session-info small { color: #6b7280; font-size: 0.75rem; }
-    .delete-btn { background: transparent; color: #9ca3af; padding: 0.15rem 0.35rem; font-size: 0.85rem; }
-    .delete-btn:hover { color: #ef4444; }
-
-    /* Smart notes formatting */
-    #notesBox { white-space: normal; }
-    #notesBox ul { padding-left: 1.2rem; margin-top: 0.25rem; }
-    #notesBox li { margin-bottom: 0.5rem; }
-    #notesBox h3 { font-size: 0.95rem; margin: 0.75rem 0 0.25rem; color: #111827; }
-
-    @media (max-width: 950px) {
-      .workspace { grid-template-columns: 1fr; overflow-y: auto; }
-      .panel { min-height: 260px; }
-    }
-  </style>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header>
@@ -67,7 +21,6 @@
   </header>
 
   <main class="workspace">
-    <!-- Left Sidebar: Saved Lectures -->
     <aside class="panel">
       <div class="panel-header">
         <h2>Saved Lectures</h2>
@@ -75,7 +28,6 @@
       <ul id="sessionList" class="session-list"></ul>
     </aside>
 
-    <!-- Middle Panel: Live Captions -->
     <section class="panel">
       <div class="panel-header">
         <h2>Live Captions</h2>
@@ -87,7 +39,6 @@
       </div>
     </section>
 
-    <!-- Right Panel: AI Smart Notes -->
     <section class="panel">
       <div class="panel-header">
         <h2>Smart Study Notes</h2>
@@ -99,227 +50,6 @@
     </section>
   </main>
 
-  <script>
-    const lectureTitleInput = document.getElementById('lectureTitle');
-    const apiKeyInput = document.getElementById('apiKey');
-    const newBtn = document.getElementById('newBtn');
-    const startBtn = document.getElementById('startBtn');
-    const stopBtn = document.getElementById('stopBtn');
-    const summarizeBtn = document.getElementById('summarizeBtn');
-    const saveBtn = document.getElementById('saveBtn');
-    const sessionList = document.getElementById('sessionList');
-    const finalSpan = document.getElementById('finalTranscript');
-    const interimSpan = document.getElementById('interimTranscript');
-    const captionsBox = document.getElementById('captionsBox');
-    const notesBox = document.getElementById('notesBox');
-    const micStatus = document.getElementById('micStatus');
-    const autoStatus = document.getElementById('autoStatus');
-
-    let sessions = JSON.parse(localStorage.getItem('notetaker_sessions') || '[]');
-    let currentSessionId = null;
-    let isListening = false;
-    let lastSummarizedLength = 0;
-    let autoTimer = null;
-
-    // Remember API key in browser
-    apiKeyInput.value = localStorage.getItem('notetaker_apikey') || '';
-    apiKeyInput.addEventListener('change', () => {
-      localStorage.setItem('notetaker_apikey', apiKeyInput.value.trim());
-    });
-
-    // Setup Web Speech API
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      alert('Your browser does not support live speech recognition. Please use Google Chrome or Microsoft Edge.');
-    }
-
-    const recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'en-US';
-
-    recognition.onresult = (event) => {
-      let interim = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          finalSpan.textContent += transcript + ' ';
-        } else {
-          interim += transcript;
-        }
-      }
-      interimSpan.textContent = interim;
-      captionsBox.scrollTop = captionsBox.scrollHeight;
-    };
-
-    recognition.onend = () => {
-      if (isListening) recognition.start();
-    };
-
-    startBtn.onclick = () => {
-      isListening = true;
-      recognition.start();
-      startBtn.style.display = 'none';
-      stopBtn.style.display = 'inline-block';
-      micStatus.textContent = 'Listening...';
-      micStatus.style.background = '#dcfce7';
-      micStatus.style.color = '#166534';
-
-      // Auto-summarize every 60 seconds if new text was captured
-      autoTimer = setInterval(() => {
-        const currentText = finalSpan.textContent.trim();
-        if (currentText.length > lastSummarizedLength + 80 && apiKeyInput.value.trim()) {
-          generateSmartNotes(true);
-        }
-      }, 60000);
-    };
-
-    stopBtn.onclick = () => {
-      isListening = false;
-      recognition.stop();
-      clearInterval(autoTimer);
-      startBtn.style.display = 'inline-block';
-      stopBtn.style.display = 'none';
-      micStatus.textContent = 'Mic Off';
-      micStatus.style.background = '#f3f4f6';
-      micStatus.style.color = '#4b5563';
-    };
-
-    async function generateSmartNotes(isAuto = false) {
-      const transcript = finalSpan.textContent.trim();
-      const apiKey = apiKeyInput.value.trim();
-
-      if (!transcript) {
-        if (!isAuto) alert('No captions captured yet!');
-        return;
-      }
-      if (!apiKey) {
-        if (!isAuto) alert('Please paste a Gemini API key in the top bar first.');
-        return;
-      }
-
-      autoStatus.textContent = 'Updating notes...';
-      if (!isAuto) {
-        notesBox.innerHTML = '<p style="color:#6b7280;">Analyzing lecture and extracting key notes...</p>';
-      }
-
-      try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              parts: [{
-                text: `You are a college study assistant. Read the following raw lecture transcript and create concise, structured study notes. Highlight key definitions, main concepts, and important takeaways using clean HTML (<h3>, <ul>, <li>, <strong>). Do NOT repeat the transcript word-for-word; synthesize only what matters for studying.\n\nTranscript:\n${transcript}`
-              }]
-            }]
-          })
-        });
-
-        const data = await response.json();
-        if (data.error) throw new Error(data.error.message);
-
-        const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Could not generate notes.';
-        notesBox.innerHTML = aiText.replace(/```html|```/g, '');
-        lastSummarizedLength = transcript.length;
-        autoStatus.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-        saveCurrentSession(true);
-      } catch (err) {
-        autoStatus.textContent = 'Update failed';
-        if (!isAuto) {
-          notesBox.innerHTML = `<p style="color:#ef4444;">Error: ${err.message}</p>`;
-        }
-      }
-    }
-
-    summarizeBtn.onclick = () => generateSmartNotes(false);
-
-    function saveCurrentSession(silent = false) {
-      const title = lectureTitleInput.value.trim() || `Lecture — ${new Date().toLocaleDateString()}`;
-      const transcript = finalSpan.textContent;
-      const notes = notesBox.innerHTML;
-
-      if (!transcript.trim() && !silent) {
-        return alert('Nothing to save yet!');
-      }
-
-      if (currentSessionId) {
-        const idx = sessions.findIndex(s => s.id === currentSessionId);
-        if (idx !== -1) {
-          sessions[idx] = { ...sessions[idx], title, transcript, notes, updatedAt: new Date().toLocaleString() };
-        }
-      } else {
-        currentSessionId = Date.now().toString();
-        sessions.unshift({
-          id: currentSessionId,
-          title,
-          transcript,
-          notes,
-          updatedAt: new Date().toLocaleString()
-        });
-      }
-
-      localStorage.setItem('notetaker_sessions', JSON.stringify(sessions));
-      renderSessionList();
-      if (!silent) alert('Lecture saved!');
-    }
-
-    saveBtn.onclick = () => saveCurrentSession(false);
-
-    newBtn.onclick = () => {
-      currentSessionId = null;
-      lectureTitleInput.value = '';
-      finalSpan.textContent = '';
-      interimSpan.textContent = '';
-      lastSummarizedLength = 0;
-      notesBox.innerHTML = '<p style="color: #6b7280;">Ready for a new lecture. Click "Start Listening" when class begins.</p>';
-      renderSessionList();
-    };
-
-    function loadSession(id) {
-      const session = sessions.find(s => s.id === id);
-      if (!session) return;
-      currentSessionId = session.id;
-      lectureTitleInput.value = session.title;
-      finalSpan.textContent = session.transcript;
-      interimSpan.textContent = '';
-      notesBox.innerHTML = session.notes;
-      lastSummarizedLength = session.transcript.length;
-      renderSessionList();
-    }
-
-    function deleteSession(e, id) {
-      e.stopPropagation();
-      sessions = sessions.filter(s => s.id !== id);
-      localStorage.setItem('notetaker_sessions', JSON.stringify(sessions));
-      if (currentSessionId === id) newBtn.onclick();
-      else renderSessionList();
-    }
-
-    function renderSessionList() {
-      sessionList.innerHTML = '';
-      if (sessions.length === 0) {
-        sessionList.innerHTML = '<li style="color:#9ca3af; font-size:0.85rem;">No saved lectures yet.</li>';
-        return;
-      }
-
-      sessions.forEach(s => {
-        const li = document.createElement('li');
-        li.className = `session-item ${s.id === currentSessionId ? 'active' : ''}`;
-        li.onclick = () => loadSession(s.id);
-        li.innerHTML = `
-          <div class="session-info">
-            <strong>${s.title}</strong>
-            <small>${s.updatedAt}</small>
-          </div>
-          <button class="delete-btn" title="Delete">✕</button>
-        `;
-        li.querySelector('.delete-btn').onclick = (e) => deleteSession(e, s.id);
-        sessionList.appendChild(li);
-      });
-    }
-
-    renderSessionList();
-  </script>
+  <script src="app.js"></script>
 </body>
 </html>

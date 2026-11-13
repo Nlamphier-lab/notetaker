@@ -1,0 +1,43 @@
+* { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
+body { margin: 0; background: #f4f6f8; color: #1f2937; display: flex; flex-direction: column; height: 100vh; }
+header { background: #111827; color: white; padding: 0.85rem 1.25rem; display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+header h1 { margin: 0; font-size: 1.2rem; display: flex; align-items: center; gap: 0.5rem; }
+.controls { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+input[type="text"], input[type="password"] { padding: 0.45rem 0.65rem; border-radius: 6px; border: 1px solid #374151; background: #1f2937; color: white; font-size: 0.9rem; }
+#lectureTitle { width: 200px; }
+#apiKey { width: 190px; }
+button { padding: 0.45rem 0.85rem; border: none; border-radius: 6px; font-weight: 600; font-size: 0.85rem; cursor: pointer; transition: opacity 0.15s; }
+button:hover { opacity: 0.9; }
+#startBtn { background: #10b981; color: white; }
+#stopBtn { background: #ef4444; color: white; display: none; }
+#summarizeBtn { background: #3b82f6; color: white; }
+#saveBtn { background: #8b5cf6; color: white; }
+#newBtn { background: #374151; color: white; }
+
+.workspace { display: grid; grid-template-columns: 250px 1fr 1fr; gap: 1rem; padding: 1rem; flex: 1; overflow: hidden; }
+.panel { background: white; border-radius: 10px; padding: 1rem; display: flex; flex-direction: column; box-shadow: 0 1px 3px rgba(0,0,0,0.08); overflow: hidden; }
+.panel-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.5rem; margin-bottom: 0.75rem; }
+.panel-header h2 { margin: 0; font-size: 1rem; }
+.badge { font-size: 0.75rem; background: #e0f2fe; color: #0369a1; padding: 0.15rem 0.5rem; border-radius: 999px; font-weight: 600; }
+
+.content-box { flex: 1; overflow-y: auto; line-height: 1.6; white-space: pre-wrap; font-size: 0.95rem; }
+.interim { color: #9ca3af; font-style: italic; }
+
+.session-list { list-style: none; padding: 0; margin: 0; overflow-y: auto; flex: 1; }
+.session-item { padding: 0.65rem; border-radius: 6px; border: 1px solid #e5e7eb; margin-bottom: 0.5rem; cursor: pointer; display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; }
+.session-item:hover { background: #f9fafb; }
+.session-item.active { border-color: #3b82f6; background: #eff6ff; }
+.session-info strong { display: block; font-size: 0.9rem; color: #111827; }
+.session-info small { color: #6b7280; font-size: 0.75rem; }
+.delete-btn { background: transparent; color: #9ca3af; padding: 0.15rem 0.35rem; font-size: 0.85rem; }
+.delete-btn:hover { color: #ef4444; }
+
+#notesBox { white-space: normal; }
+#notesBox ul { padding-left: 1.2rem; margin-top: 0.25rem; }
+#notesBox li { margin-bottom: 0.5rem; }
+#notesBox h3 { font-size: 0.95rem; margin: 0.75rem 0 0.25rem; color: #111827; }
+
+@media (max-width: 950px) {
+  .workspace { grid-template-columns: 1fr; overflow-y: auto; }
+  .panel { min-height: 260px; }
+}

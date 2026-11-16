@@ -14,7 +14,7 @@
       <input type="password" id="apiKey" placeholder="Gemini API Key" />
       <button id="newBtn">+ New</button>
       <button id="startBtn">Start Listening</button>
-      <button id="stopBtn">Stop</button>
+      <button id="stopBtn" style="display:none;">Stop</button>
       <button id="summarizeBtn">Update Notes Now</button>
       <button id="saveBtn">Save Lecture</button>
     </div>
@@ -33,10 +33,10 @@
         <h2>Live Captions</h2>
         <span id="micStatus" class="badge" style="background:#f3f4f6; color:#4b5563;">Mic Off</span>
       </div>
-      <div id="captionsBox" class="content-box" contenteditable="true">
-  <span id="finalTranscript"></span>
-  <span id="interimTranscript" class="interim"></span>
-</div>
+      <div id="captionsBox" class="content-box" contenteditable="true" title="Speak into your mic or click here to type/paste lecture text">
+        <span id="finalTranscript"></span>
+        <span id="interimTranscript" class="interim"></span>
+      </div>
     </section>
 
     <section class="panel">

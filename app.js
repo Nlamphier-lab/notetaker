@@ -1,6 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
   const lectureTitleInput = document.getElementById('lectureTitle');
-  const apiKeyInput = document.getElementById('apiKey');
   const newBtn = document.getElementById('newBtn');
   const startBtn = document.getElementById('startBtn');
   const stopBtn = document.getElementById('stopBtn');
@@ -14,7 +13,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const micStatus = document.getElementById('micStatus');
   const autoStatus = document.getElementById('autoStatus');
 
-  // Verify the script actually loaded by updating the badge text on startup
   if (micStatus) {
     micStatus.textContent = 'Mic Ready';
   }
@@ -25,11 +23,6 @@ document.addEventListener('DOMContentLoaded', () => {
   let lastSummarizedLength = 0;
   let autoTimer = null;
   let recognition = null;
-
-  apiKeyInput.value = localStorage.getItem('notetaker_apikey') || '';
-  apiKeyInput.addEventListener('change', () => {
-    localStorage.setItem('notetaker_apikey', apiKeyInput.value.trim());
-  });
 
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -54,7 +47,12 @@ document.addEventListener('DOMContentLoaded', () => {
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const transcript = event.results[i][0].transcript;
         if (event.results[i].isFinal) {
-          finalSpan.textContent += transcript + ' ';
+          // Capitalize first letter and add period if speaker pauses
+          const cleaned = transcript.trim();
+          if (cleaned) {
+            const formatted = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+            finalSpan.textContent += (/[.!?]$/.test(formatted) ? formatted : formatted + '.') + ' ';
+          }
         } else {
           interim += transcript;
         }
@@ -99,7 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   startBtn.addEventListener('click', () => {
     if (!recognition) {
-      alert('Speech recognition is not supported in this browser. Please open in Google Chrome or Microsoft Edge.');
+      alert('Live speech recognition requires Google Chrome or Microsoft Edge. You can still type or paste text directly into Live Captions!');
       return;
     }
 
@@ -121,10 +119,10 @@ document.addEventListener('DOMContentLoaded', () => {
     clearInterval(autoTimer);
     autoTimer = setInterval(() => {
       const currentText = captionsBox.innerText.trim();
-      if (currentText.length > lastSummarizedLength + 80 && apiKeyInput.value.trim()) {
+      if (currentText.length > lastSummarizedLength + 50) {
         generateSmartNotes(true);
       }
-    }, 60000);
+    }, 30000);
   });
 
   stopBtn.addEventListener('click', () => {
@@ -140,53 +138,132 @@ document.addEventListener('DOMContentLoaded', () => {
     micStatus.textContent = 'Mic Off';
     micStatus.style.background = '#f3f4f6';
     micStatus.style.color = '#4b5563';
+    // Automatically run final note extraction when stopping
+    if (captionsBox.innerText.trim()) {
+      generateSmartNotes(true);
+    }
   });
 
-  async function generateSmartNotes(isAuto = false) {
-    const transcript = captionsBox.innerText.trim();
-    const apiKey = apiKeyInput.value.trim();
+  // Local client-side NLP note extractor (no API key needed)
+  function generateSmartNotes(isAuto = false) {
+    const rawText = captionsBox.innerText.trim();
 
-    if (!transcript) {
+    if (!rawText) {
       if (!isAuto) alert('No captions captured yet! Speak into your mic or click inside Live Captions to paste text.');
       return;
     }
-    if (!apiKey) {
-      if (!isAuto) alert('Please paste a Gemini API key in the top bar first.');
+
+    // Split text into sentences
+    const sentences = rawText
+      .replace(/([.?!])\s*(?=[A-Z])/g, '$1|')
+      .split('|')
+      .map(s => s.trim())
+      .filter(s => s.split(/\s+/).length >= 4);
+
+    if (sentences.length === 0) {
+      notesBox.innerHTML = `<p>${rawText}</p>`;
       return;
     }
 
-    autoStatus.textContent = 'Updating notes...';
-    if (!isAuto) {
-      notesBox.innerHTML = '<p style="color:#6b7280;">Analyzing lecture and extracting key notes...</p>';
-    }
+    // Common stopwords to ignore when scoring top keywords
+    const stopWords = new Set([
+      'the', 'and', 'that', 'have', 'for', 'not', 'with', 'you', 'this', 'but',
+      'his', 'from', 'they', 'say', 'her', 'she', 'will', 'one', 'all', 'would',
+      'there', 'their', 'what', 'out', 'about', 'who', 'get', 'which', 'when',
+      'make', 'can', 'like', 'time', 'just', 'know', 'take', 'into', 'your',
+      'some', 'could', 'them', 'see', 'other', 'than', 'then', 'now', 'look',
+      'only', 'come', 'its', 'over', 'think', 'also', 'back', 'after', 'use',
+      'two', 'how', 'our', 'work', 'first', 'well', 'way', 'even', 'new', 'want',
+      'because', 'any', 'these', 'give', 'most', 'are', 'was', 'were', 'been',
+      'has', 'had', 'does', 'did', 'going', 'really', 'very', 'things', 'thing'
+    ]);
 
-    try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: `You are a college study assistant. Read the following raw lecture transcript and create concise, structured study notes. Highlight key definitions, main concepts, and important takeaways using clean HTML (<h3>, <ul>, <li>, <strong>). Do NOT repeat the transcript word-for-word; synthesize only what matters for studying.\n\nTranscript:\n${transcript}`
-            }]
-          }]
-        })
-      });
-
-      const data = await response.json();
-      if (data.error) throw new Error(data.error.message);
-
-      const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Could not generate notes.';
-      notesBox.innerHTML = aiText.replace(/```html|```/g, '').trim();
-      lastSummarizedLength = transcript.length;
-      autoStatus.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-      saveCurrentSession(true);
-    } catch (err) {
-      autoStatus.textContent = 'Update failed';
-      if (!isAuto) {
-        notesBox.innerHTML = `<p style="color:#ef4444;">Error: ${err.message}</p>`;
+    // Calculate word frequency across the lecture
+    const wordFreq = {};
+    rawText.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).forEach(word => {
+      if (word.length > 3 && !stopWords.has(word)) {
+        wordFreq[word] = (wordFreq[word] || 0) + 1;
       }
+    });
+
+    // Top 5 recurring topic keywords
+    const topTopics = Object.entries(wordFreq)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(entry => entry[0].charAt(0).toUpperCase() + entry[0].slice(1));
+
+    const definitions = [];
+    const reminders = [];
+    const scoredPoints = [];
+
+    const defRegex = /\b(is defined as|refers to|means that|is a type of|is known as|is called)\b/i;
+    const reminderRegex = /\b(exam|quiz|test|due|assignment|homework|remember|don't forget|important to note|takeaway)\b/i;
+    const emphasisRegex = /\b(key|main|crucial|essential|primarily|therefore|in summary|for example|first|second|third|reason|causes|leads to)\b/i;
+
+    sentences.forEach((sentence, index) => {
+      if (defRegex.test(sentence)) {
+        definitions.push(sentence);
+      } else if (reminderRegex.test(sentence)) {
+        reminders.push(sentence);
+      } else {
+        // Score sentence by keyword density + emphasis cues
+        let score = 0;
+        const words = sentence.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/);
+        words.forEach(w => {
+          if (wordFreq[w]) score += wordFreq[w];
+        });
+        score = score / Math.sqrt(words.length); // Normalize for sentence length
+        if (emphasisRegex.test(sentence)) score += 3;
+        if (index === 0) score += 1.5; // Opening thesis boost
+
+        scoredPoints.push({ sentence, score, index });
+      }
+    });
+
+    // Pick top 5 highest-scoring main points in chronological order
+    const mainPoints = scoredPoints
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5)
+      .sort((a, b) => a.index - b.index)
+      .map(item => item.sentence);
+
+    // Build clean structured HTML notes
+    let html = '';
+
+    if (topTopics.length > 0) {
+      html += `<h3>📌 Key Topics</h3><p><strong>${topTopics.join(' • ')}</strong></p>`;
     }
+
+    if (definitions.length > 0) {
+      html += `<h3>📖 Key Definitions</h3><ul>`;
+      definitions.forEach(def => {
+        // Bold the term before "is defined as / refers to / means"
+        const highlighted = def.replace(/^([^,]+?)(\s+(?:is defined as|refers to|means that|is a type of|is known as|is called)\b)/i, '<strong>$1</strong>$2');
+        html += `<li>${highlighted}</li>`;
+      });
+      html += `</ul>`;
+    }
+
+    if (mainPoints.length > 0) {
+      html += `<h3>💡 Main Lecture Takeaways</h3><ul>`;
+      mainPoints.forEach(pt => {
+        html += `<li>${pt}</li>`;
+      });
+      html += `</ul>`;
+    }
+
+    if (reminders.length > 0) {
+      html += `<h3>⚠️ Exam & Action Reminders</h3><ul>`;
+      reminders.forEach(rem => {
+        html += `<li><strong>${rem}</strong></li>`;
+      });
+      html += `</ul>`;
+    }
+
+    notesBox.innerHTML = html || `<p>${rawText}</p>`;
+    lastSummarizedLength = rawText.length;
+    autoStatus.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    saveCurrentSession(true);
   }
 
   summarizeBtn.addEventListener('click', () => generateSmartNotes(false));

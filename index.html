@@ -11,11 +11,10 @@
     <h1>🎙️ Notetaker</h1>
     <div class="controls">
       <input type="text" id="lectureTitle" placeholder="Lecture Name (e.g. Psych 101)" />
-      <input type="password" id="apiKey" placeholder="Gemini API Key" />
       <button id="newBtn">+ New</button>
       <button id="startBtn">Start Listening</button>
       <button id="stopBtn" style="display:none;">Stop</button>
-      <button id="summarizeBtn">Update Notes Now</button>
+      <button id="summarizeBtn">Extract Notes Now</button>
       <button id="saveBtn">Save Lecture</button>
     </div>
   </header>
@@ -42,10 +41,10 @@
     <section class="panel">
       <div class="panel-header">
         <h2>Smart Study Notes</h2>
-        <span id="autoStatus" class="badge">Auto-sync: 60s</span>
+        <span id="autoStatus" class="badge">Auto-sync: 30s</span>
       </div>
       <div id="notesBox" class="content-box">
-        <p style="color: #6b7280;">Enter your Gemini API key and start listening. Notes will automatically summarize key points every 60 seconds, or whenever you click "Update Notes Now".</p>
+        <p style="color: #6b7280;">Click <strong>Start Listening</strong> (or paste lecture text into Live Captions). Key definitions, main concepts, and takeaways will automatically organize here every 30 seconds.</p>
       </div>
     </section>
   </main>

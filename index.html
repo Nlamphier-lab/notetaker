@@ -11,11 +11,11 @@
     <h1>🎙️ Notetaker</h1>
     <div class="controls">
       <input type="text" id="lectureTitle" placeholder="Lecture Name (e.g. Psych 101)" />
-      <button id="newBtn">+ New</button>
-      <button id="startBtn">Start Listening</button>
-      <button id="stopBtn" style="display:none;">Stop</button>
-      <button id="summarizeBtn">Extract Notes Now</button>
-      <button id="saveBtn">Save Lecture</button>
+      <button id="newBtn" type="button">+ New</button>
+      <button id="startBtn" type="button">Start Listening</button>
+      <button id="stopBtn" type="button" style="display:none;">Stop</button>
+      <button id="summarizeBtn" type="button">Extract Notes Now</button>
+      <button id="saveBtn" type="button">Save Lecture</button>
     </div>
   </header>
 
@@ -30,7 +30,7 @@
     <section class="panel">
       <div class="panel-header">
         <h2>Live Captions</h2>
-        <span id="micStatus" class="badge" style="background:#f3f4f6; color:#4b5563;">Mic Off</span>
+        <span id="micStatus" class="badge" style="background:#f3f4f6; color:#4b5563;">Loading...</span>
       </div>
       <div id="captionsBox" class="content-box" contenteditable="true" title="Speak into your mic or click here to type/paste lecture text">
         <span id="finalTranscript"></span>
@@ -44,11 +44,316 @@
         <span id="autoStatus" class="badge">Auto-sync: 30s</span>
       </div>
       <div id="notesBox" class="content-box">
-        <p style="color: #6b7280;">Click <strong>Start Listening</strong> (or paste lecture text into Live Captions). Key definitions, main concepts, and takeaways will automatically organize here every 30 seconds.</p>
+        <p style="color: #6b7280;">Click <strong>Start Listening</strong> (or click inside Live Captions to paste/type lecture text). Key definitions, main concepts, and takeaways will organize here automatically.</p>
       </div>
     </section>
   </main>
 
-  <script src="app.js"></script>
+  <script>
+    const lectureTitleInput = document.getElementById('lectureTitle');
+    const newBtn = document.getElementById('newBtn');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const summarizeBtn = document.getElementById('summarizeBtn');
+    const saveBtn = document.getElementById('saveBtn');
+    const sessionList = document.getElementById('sessionList');
+    const finalSpan = document.getElementById('finalTranscript');
+    const interimSpan = document.getElementById('interimTranscript');
+    const captionsBox = document.getElementById('captionsBox');
+    const notesBox = document.getElementById('notesBox');
+    const micStatus = document.getElementById('micStatus');
+    const autoStatus = document.getElementById('autoStatus');
+
+    let sessions = JSON.parse(localStorage.getItem('notetaker_sessions') || '[]');
+    let currentSessionId = null;
+    let isListening = false;
+    let lastSummarizedLength = 0;
+    let autoTimer = null;
+    let recognition = null;
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      micStatus.textContent = 'Browser Unsupported';
+      micStatus.style.background = '#fee2e2';
+      micStatus.style.color = '#991b1b';
+    } else {
+      recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+      micStatus.textContent = 'Mic Ready (v2)';
+
+      recognition.onstart = () => {
+        micStatus.textContent = 'Listening...';
+        micStatus.style.background = '#dcfce7';
+        micStatus.style.color = '#166534';
+      };
+
+      recognition.onresult = (event) => {
+        let interim = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            const cleaned = transcript.trim();
+            if (cleaned) {
+              const formatted = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+              finalSpan.textContent += (/[.!?]$/.test(formatted) ? formatted : formatted + '.') + ' ';
+            }
+          } else {
+            interim += transcript;
+          }
+        }
+        interimSpan.textContent = interim;
+        captionsBox.scrollTop = captionsBox.scrollHeight;
+      };
+
+      recognition.onerror = (event) => {
+        micStatus.style.background = '#fee2e2';
+        micStatus.style.color = '#991b1b';
+        micStatus.textContent = `Mic Error: ${event.error}`;
+        if (event.error === 'not-allowed' || event.error === 'network' || event.error === 'audio-capture') {
+          isListening = false;
+          resetButtons();
+        }
+      };
+
+      recognition.onend = () => {
+        if (isListening) {
+          setTimeout(() => {
+            if (isListening) {
+              try { recognition.start(); } catch (e) {}
+            }
+          }, 300);
+        } else {
+          resetButtons();
+        }
+      };
+    }
+
+    function resetButtons() {
+      startBtn.style.display = 'inline-block';
+      stopBtn.style.display = 'none';
+      clearInterval(autoTimer);
+    }
+
+    startBtn.onclick = () => {
+      if (!recognition) {
+        alert('Speech recognition is only supported in Google Chrome or Microsoft Edge.');
+        return;
+      }
+      isListening = true;
+      startBtn.style.display = 'none';
+      stopBtn.style.display = 'inline-block';
+      micStatus.textContent = 'Starting Mic...';
+      micStatus.style.background = '#fef9c3';
+      micStatus.style.color = '#854d0e';
+
+      try {
+        recognition.start();
+      } catch (err) {
+        micStatus.textContent = `Start Error: ${err.message}`;
+        micStatus.style.background = '#fee2e2';
+        micStatus.style.color = '#991b1b';
+      }
+
+      clearInterval(autoTimer);
+      autoTimer = setInterval(() => {
+        const currentText = captionsBox.innerText.trim();
+        if (currentText.length > lastSummarizedLength + 50) {
+          generateSmartNotes(true);
+        }
+      }, 30000);
+    };
+
+    stopBtn.onclick = () => {
+      isListening = false;
+      if (recognition) {
+        try { recognition.stop(); } catch (e) {}
+      }
+      resetButtons();
+      micStatus.textContent = 'Mic Off';
+      micStatus.style.background = '#f3f4f6';
+      micStatus.style.color = '#4b5563';
+      if (captionsBox.innerText.trim()) {
+        generateSmartNotes(true);
+      }
+    };
+
+    function generateSmartNotes(isAuto = false) {
+      const rawText = captionsBox.innerText.trim();
+      if (!rawText) {
+        if (!isAuto) alert('No captions captured yet! Speak into your mic or click inside Live Captions to paste text.');
+        return;
+      }
+
+      const sentences = rawText
+        .replace(/([.?!])\s*(?=[A-Z])/g, '$1|')
+        .split('|')
+        .map(s => s.trim())
+        .filter(s => s.split(/\s+/).length >= 4);
+
+      if (sentences.length === 0) {
+        notesBox.innerHTML = `<p>${rawText}</p>`;
+        return;
+      }
+
+      const stopWords = new Set([
+        'the', 'and', 'that', 'have', 'for', 'not', 'with', 'you', 'this', 'but',
+        'his', 'from', 'they', 'say', 'her', 'she', 'will', 'one', 'all', 'would',
+        'there', 'their', 'what', 'out', 'about', 'who', 'get', 'which', 'when',
+        'make', 'can', 'like', 'time', 'just', 'know', 'take', 'into', 'your',
+        'some', 'could', 'them', 'see', 'other', 'than', 'then', 'now', 'look',
+        'only', 'come', 'its', 'over', 'think', 'also', 'back', 'after', 'use',
+        'two', 'how', 'our', 'work', 'first', 'well', 'way', 'even', 'new', 'want',
+        'because', 'any', 'these', 'give', 'most', 'are', 'was', 'were', 'been',
+        'has', 'had', 'does', 'did', 'going', 'really', 'very', 'things', 'thing'
+      ]);
+
+      const wordFreq = {};
+      rawText.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).forEach(word => {
+        if (word.length > 3 && !stopWords.has(word)) {
+          wordFreq[word] = (wordFreq[word] || 0) + 1;
+        }
+      });
+
+      const topTopics = Object.entries(wordFreq)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(entry => entry[0].charAt(0).toUpperCase() + entry[0].slice(1));
+
+      const definitions = [];
+      const reminders = [];
+      const scoredPoints = [];
+
+      const defRegex = /\b(is defined as|refers to|means that|is a type of|is known as|is called)\b/i;
+      const reminderRegex = /\b(exam|quiz|test|due|assignment|homework|remember|don't forget|important to note|takeaway)\b/i;
+      const emphasisRegex = /\b(key|main|crucial|essential|primarily|therefore|in summary|for example|first|second|third|reason|causes|leads to)\b/i;
+
+      sentences.forEach((sentence, index) => {
+        if (defRegex.test(sentence)) {
+          definitions.push(sentence);
+        } else if (reminderRegex.test(sentence)) {
+          reminders.push(sentence);
+        } else {
+          let score = 0;
+          const words = sentence.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/);
+          words.forEach(w => { if (wordFreq[w]) score += wordFreq[w]; });
+          score = score / Math.sqrt(words.length);
+          if (emphasisRegex.test(sentence)) score += 3;
+          if (index === 0) score += 1.5;
+          scoredPoints.push({ sentence, score, index });
+        }
+      });
+
+      const mainPoints = scoredPoints
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 5)
+        .sort((a, b) => a.index - b.index)
+        .map(item => item.sentence);
+
+      let html = '';
+      if (topTopics.length > 0) html += `<h3>📌 Key Topics</h3><p><strong>${topTopics.join(' • ')}</strong></p>`;
+      if (definitions.length > 0) {
+        html += `<h3>📖 Key Definitions</h3><ul>`;
+        definitions.forEach(def => {
+          const highlighted = def.replace(/^([^,]+?)(\s+(?:is defined as|refers to|means that|is a type of|is known as|is called)\b)/i, '<strong>$1</strong>$2');
+          html += `<li>${highlighted}</li>`;
+        });
+        html += `</ul>`;
+      }
+      if (mainPoints.length > 0) {
+        html += `<h3>💡 Main Lecture Takeaways</h3><ul>`;
+        mainPoints.forEach(pt => { html += `<li>${pt}</li>`; });
+        html += `</ul>`;
+      }
+      if (reminders.length > 0) {
+        html += `<h3>⚠️ Exam & Action Reminders</h3><ul>`;
+        reminders.forEach(rem => { html += `<li><strong>${rem}</strong></li>`; });
+        html += `</ul>`;
+      }
+
+      notesBox.innerHTML = html || `<p>${rawText}</p>`;
+      lastSummarizedLength = rawText.length;
+      autoStatus.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+      saveCurrentSession(true);
+    }
+
+    summarizeBtn.onclick = () => generateSmartNotes(false);
+
+    function saveCurrentSession(silent = false) {
+      const title = lectureTitleInput.value.trim() || `Lecture — ${new Date().toLocaleDateString()}`;
+      const transcript = captionsBox.innerText.trim();
+      const notes = notesBox.innerHTML;
+      if (!transcript && !silent) return alert('Nothing to save yet!');
+
+      if (currentSessionId) {
+        const idx = sessions.findIndex(s => s.id === currentSessionId);
+        if (idx !== -1) sessions[idx] = { ...sessions[idx], title, transcript, notes, updatedAt: new Date().toLocaleString() };
+      } else {
+        currentSessionId = Date.now().toString();
+        sessions.unshift({ id: currentSessionId, title, transcript, notes, updatedAt: new Date().toLocaleString() });
+      }
+      localStorage.setItem('notetaker_sessions', JSON.stringify(sessions));
+      renderSessionList();
+      if (!silent) alert('Lecture saved!');
+    }
+
+    saveBtn.onclick = () => saveCurrentSession(false);
+
+    newBtn.onclick = () => {
+      currentSessionId = null;
+      lectureTitleInput.value = '';
+      finalSpan.textContent = '';
+      interimSpan.textContent = '';
+      lastSummarizedLength = 0;
+      notesBox.innerHTML = '<p style="color: #6b7280;">Ready for a new lecture. Click "Start Listening" when class begins.</p>';
+      renderSessionList();
+    };
+
+    function loadSession(id) {
+      const session = sessions.find(s => s.id === id);
+      if (!session) return;
+      currentSessionId = session.id;
+      lectureTitleInput.value = session.title;
+      finalSpan.textContent = session.transcript;
+      interimSpan.textContent = '';
+      notesBox.innerHTML = session.notes;
+      lastSummarizedLength = session.transcript.length;
+      renderSessionList();
+    }
+
+    function deleteSession(e, id) {
+      e.stopPropagation();
+      sessions = sessions.filter(s => s.id !== id);
+      localStorage.setItem('notetaker_sessions', JSON.stringify(sessions));
+      if (currentSessionId === id) newBtn.onclick();
+      else renderSessionList();
+    }
+
+    function renderSessionList() {
+      sessionList.innerHTML = '';
+      if (sessions.length === 0) {
+        sessionList.innerHTML = '<li style="color:#9ca3af; font-size:0.85rem;">No saved lectures yet.</li>';
+        return;
+      }
+      sessions.forEach(s => {
+        const li = document.createElement('li');
+        li.className = `session-item ${s.id === currentSessionId ? 'active' : ''}`;
+        li.onclick = () => loadSession(s.id);
+        li.innerHTML = `
+          <div class="session-info">
+            <strong>${s.title}</strong>
+            <small>${s.updatedAt}</small>
+          </div>
+          <button class="delete-btn" title="Delete">✕</button>
+        `;
+        li.querySelector('.delete-btn').onclick = (e) => deleteSession(e, s.id);
+        sessionList.appendChild(li);
+      });
+    }
+
+    renderSessionList();
+  </script>
 </body>
 </html>

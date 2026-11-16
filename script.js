@@ -1,4 +1,4 @@
-const lectureTitleInput = document.getElementById('lectureTitle');
+  const lectureTitleInput = document.getElementById('lectureTitle');
 const apiKeyInput = document.getElementById('apiKey');
 const newBtn = document.getElementById('newBtn');
 const startBtn = document.getElementById('startBtn');
@@ -18,51 +18,126 @@ let currentSessionId = null;
 let isListening = false;
 let lastSummarizedLength = 0;
 let autoTimer = null;
+let recognition = null;
 
+// Load saved API key locally (never stored in Git)
 apiKeyInput.value = localStorage.getItem('notetaker_apikey') || '';
 apiKeyInput.addEventListener('change', () => {
   localStorage.setItem('notetaker_apikey', apiKeyInput.value.trim());
 });
 
+// Initialize Speech Recognition safely
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
 if (!SpeechRecognition) {
+  micStatus.textContent = 'Browser Unsupported';
+  micStatus.style.background = '#fee2e2';
+  micStatus.style.color = '#991b1b';
   alert('Your browser does not support live speech recognition. Please use Google Chrome or Microsoft Edge.');
+} else {
+  recognition = new SpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+
+  recognition.onstart = () => {
+    micStatus.textContent = 'Listening...';
+    micStatus.style.background = '#dcfce7';
+    micStatus.style.color = '#166534';
+  };
+
+  recognition.onresult = (event) => {
+    let interim = '';
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const transcript = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        finalSpan.textContent += transcript + ' ';
+      } else {
+        interim += transcript;
+      }
+    }
+    interimSpan.textContent = interim;
+    captionsBox.scrollTop = captionsBox.scrollHeight;
+  };
+
+  recognition.onerror = (event) => {
+    console.error('Speech recognition error:', event.error);
+    micStatus.style.background = '#fee2e2';
+    micStatus.style.color = '#991b1b';
+
+    if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+      micStatus.textContent = 'Mic Blocked (Check Browser Permissions)';
+      isListening = false;
+      resetButtons();
+    } else if (event.error === 'no-speech') {
+      micStatus.textContent = 'Listening (Waiting for voice...)';
+    } else if (event.error === 'network') {
+      micStatus.textContent = 'Network Error (Speech API offline)';
+      isListening = false;
+      resetButtons();
+    } else {
+      micStatus.textContent = `Mic Error: ${event.error}`;
+    }
+  };
+
+  recognition.onend = () => {
+    if (isListening) {
+      // Slight delay prevents rapid infinite restart loops if mic fails
+      setTimeout(() => {
+        if (isListening) {
+          try {
+            recognition.start();
+          } catch (e) {
+            console.warn('Restart skipped:', e.message);
+          }
+        }
+      }, 300);
+    } else {
+      resetButtons();
+    }
+  };
 }
 
-const recognition = new SpeechRecognition();
-recognition.continuous = true;
-recognition.interimResults = true;
-recognition.lang = 'en-US';
+function resetButtons() {
+  startBtn.style.display = 'inline-block';
+  stopBtn.style.display = 'none';
+  clearInterval(autoTimer);
+}
 
-recognition.onresult = (event) => {
-  let interim = '';
-  for (let i = event.resultIndex; i < event.results.length; i++) {
-    const transcript = event.results[i][0].transcript;
-    if (event.results[i].isFinal) {
-      finalSpan.textContent += transcript + ' ';
-    } else {
-      interim += transcript;
-    }
+startBtn.onclick = async () => {
+  if (!recognition) {
+    alert('Speech recognition is not available in this browser. Use Chrome or Edge.');
+    return;
   }
-  interimSpan.textContent = interim;
-  captionsBox.scrollTop = captionsBox.scrollHeight;
-};
 
-recognition.onend = () => {
-  if (isListening) recognition.start();
-};
+  // Explicitly request microphone access first so browser prompts cleanly
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach(track => track.stop()); // Release stream so SpeechRecognition can claim it
+  } catch (err) {
+    micStatus.textContent = 'Mic Permission Denied';
+    micStatus.style.background = '#fee2e2';
+    micStatus.style.color = '#991b1b';
+    alert('Microphone access was denied. Click the lock/tune icon in your browser address bar and set Microphone to "Allow".');
+    return;
+  }
 
-startBtn.onclick = () => {
   isListening = true;
-  recognition.start();
   startBtn.style.display = 'none';
   stopBtn.style.display = 'inline-block';
-  micStatus.textContent = 'Listening...';
-  micStatus.style.background = '#dcfce7';
-  micStatus.style.color = '#166534';
+  micStatus.textContent = 'Starting Mic...';
+  micStatus.style.background = '#fef9c3';
+  micStatus.style.color = '#854d0e';
 
+  try {
+    recognition.start();
+  } catch (e) {
+    console.error('Start error:', e);
+  }
+
+  clearInterval(autoTimer);
   autoTimer = setInterval(() => {
-    const currentText = finalSpan.textContent.trim();
+    const currentText = captionsBox.innerText.trim();
     if (currentText.length > lastSummarizedLength + 80 && apiKeyInput.value.trim()) {
       generateSmartNotes(true);
     }
@@ -71,21 +146,26 @@ startBtn.onclick = () => {
 
 stopBtn.onclick = () => {
   isListening = false;
-  recognition.stop();
-  clearInterval(autoTimer);
-  startBtn.style.display = 'inline-block';
-  stopBtn.style.display = 'none';
+  if (recognition) {
+    try {
+      recognition.stop();
+    } catch (e) {
+      console.warn(e);
+    }
+  }
+  resetButtons();
   micStatus.textContent = 'Mic Off';
   micStatus.style.background = '#f3f4f6';
   micStatus.style.color = '#4b5563';
 };
 
 async function generateSmartNotes(isAuto = false) {
-  const transcript = finalSpan.textContent.trim();
+  // Uses captionsBox.innerText so both live speech AND manually pasted/typed text work
+  const transcript = captionsBox.innerText.trim();
   const apiKey = apiKeyInput.value.trim();
 
   if (!transcript) {
-    if (!isAuto) alert('No captions captured yet!');
+    if (!isAuto) alert('No captions captured yet! Speak into your mic or paste lecture text into Live Captions.');
     return;
   }
   if (!apiKey) {
@@ -115,7 +195,7 @@ async function generateSmartNotes(isAuto = false) {
     if (data.error) throw new Error(data.error.message);
 
     const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Could not generate notes.';
-    notesBox.innerHTML = aiText.replace(/```html|```/g, '');
+    notesBox.innerHTML = aiText.replace(/```html|```/g, '').trim();
     lastSummarizedLength = transcript.length;
     autoStatus.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
     saveCurrentSession(true);
@@ -131,10 +211,10 @@ summarizeBtn.onclick = () => generateSmartNotes(false);
 
 function saveCurrentSession(silent = false) {
   const title = lectureTitleInput.value.trim() || `Lecture — ${new Date().toLocaleDateString()}`;
-  const transcript = finalSpan.textContent;
+  const transcript = captionsBox.innerText.trim();
   const notes = notesBox.innerHTML;
 
-  if (!transcript.trim() && !silent) {
+  if (!transcript && !silent) {
     return alert('Nothing to save yet!');
   }
 
